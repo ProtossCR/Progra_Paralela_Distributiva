@@ -1,1 +1,85 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Taller_V
+{
+    // Representa un pedido generado por un cliente
+    public struct Pedido
+    {
+        public int Id { get; }
+        public string Cliente { get; }
+
+        public Pedido(int id, string cliente)
+        {
+            Id = id;
+            Cliente = cliente;
+        }
+    }
+
+    class Program
+    {
+        // Cola concurrente que almacena los pedidos (productor > consumidor)
+        private static BlockingCollection<Pedido> _colaPedidos = new BlockingCollection<Pedido>();
+
+        // Contador atómico de pedidos procesados
+        private static int _pedidosProcesados = 0;
+
+        static async Task Main(string[] args)
+        {
+            Console.WriteLine("=== Inicio de simulación de pedidos multicliente ===\n");
+
+            // 1) Lanzamos dos productores
+            Task productor1 = Task.Run(() => Productor("ClienteA", 1, 5));
+            Task productor2 = Task.Run(() => Productor("ClienteB", 6, 5));
+
+            // 2) Lanzamos dos consumidores
+            Task consumidor1 = Task.Run(() => Consumidor("Operario1"));
+            Task consumidor2 = Task.Run(() => Consumidor("Operario2"));
+
+            // 3) Esperamos a que los productores terminen de añadir pedidos
+            await Task.WhenAll(productor1, productor2);
+
+            // 4) Señalizamos que no se agregarán más pedidos
+            _colaPedidos.CompleteAdding();
+
+            // 5) Esperamos a que los consumidores terminen de procesar todo
+            await Task.WhenAll(consumidor1, consumidor2);
+
+            Console.WriteLine($"\nTodos los pedidos han sido procesados. Total procesados: {_pedidosProcesados}");
+            Console.WriteLine("=== Fin de la simulación ===");
+            Console.ReadLine();
+        }
+
+        // Método de productor: genera 'count' pedidos, con IDs consecutivos desde startId
+        private static void Productor(string cliente, int startId, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                var pedido = new Pedido(startId + i, cliente);
+                _colaPedidos.Add(pedido);  // Agrega de forma segura a la colección concurrente
+                Console.WriteLine($"[Productor:{cliente}] Creó Pedido {pedido.Id}");
+                Thread.Sleep(200);         // Simula tiempo entre pedidos
+            }
+        }
+
+        // Método de consumidor: toma pedidos de la cola hasta que CompleteAdding
+        private static void Consumidor(string operario)
+        {
+            foreach (var pedido in _colaPedidos.GetConsumingEnumerable())
+            {
+                Console.WriteLine($"    [Consumidor:{operario}] Procesando Pedido {pedido.Id} de {pedido.Cliente}...");
+                Thread.Sleep(500);                         // Simula tiempo de procesamiento
+
+                // Incremento atómico del contador de procesados
+                int total = Interlocked.Increment(ref _pedidosProcesados);
+                Console.WriteLine($"    [Consumidor:{operario}] Pedido {pedido.Id} procesado. Contador actualizado: {total}");
+            }
+        }
+    }
+}
 
