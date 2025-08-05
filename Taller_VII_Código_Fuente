@@ -1,0 +1,126 @@
+***CÓDIGO FUENTE CLIENTE EN VS USANDO C#***
+using System;
+using System.Net.WebSockets;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+
+class Cliente
+{
+    static async Task Main()
+    {
+        // Solicita al usuario su identificador
+        Console.Write("Ingrese su identificador (ej. Cliente01): ");
+        var nombre = Console.ReadLine();
+        // Crea un nuevo WebSocket
+        var client = new ClientWebSocket();
+        // Conecta al servidor WebSocket (coloca tu URL del Replit aquí)
+        await client.ConnectAsync(new Uri("ws://f9ca9a50-b2ae-4765-8939-180db09ea4f2-00-22iiy3524s5yu.kirk.replit.dev/"), CancellationToken.None);
+        Console.WriteLine($"Conectado como {nombre}");
+        // Inicia una tarea en segundo plano para recibir mensajes del servidor
+        _ = Task.Run(async () =>
+        {
+            var buffer = new byte[1024];
+            // Mientras la conexión esté abierta, sigue recibiendo mensajes
+            while (client.State == WebSocketState.Open)
+            {
+                var result = await client.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                var msg = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                // Muestra el mensaje recibido
+                Console.WriteLine($"\n[Mensaje recibido] {msg}");
+                // Vuelve a mostrar el prompt de entrada
+                Console.Write($"{nombre}> "); // vuelve a mostrar el prompt
+            }
+        });
+
+        // Bucle infinito
+        while (true)
+        {
+            Console.Write($"{nombre}> ");
+            var mensaje = Console.ReadLine();
+            if (mensaje.Equals("exit", StringComparison.OrdinalIgnoreCase))
+                break;
+            var bytes = Encoding.UTF8.GetBytes($"{nombre}: {mensaje}");
+            await client.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+            Console.WriteLine($"[Enviado] {mensaje}");
+            await Task.Delay(2000);
+        }
+        await client.CloseAsync(WebSocketCloseStatus.NormalClosure, "Cierre", CancellationToken.None);
+  }
+}
+
+
+***CÓDIGO FUENTE SERVIDOR EN REPLIT USANDO C#***
+using System;
+using System.Threading; // Para CancellationToken
+using System.Collections.Generic; // Para ArraySegment<T>
+using System.Net.WebSockets; // WebSocket API de .NET
+using System.Text; // Para codificar/decodificar texto UTF-8
+using Microsoft.AspNetCore.Builder; // Para construir la aplicación web
+using Microsoft.AspNetCore.Hosting; // Para ejecutar en el servidor
+using Microsoft.Extensions.Hosting; // Para crear host
+using Microsoft.AspNetCore.Http;
+using System.Collections.Concurrent; // Para diccionario de clientes concurrentes
+
+// Crear la aplicación web (host ASP.NET Core)
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Diccionario seguro para múltiples hilos que guarda clientes conectados
+var sockets = new ConcurrentDictionary<string, WebSocket>();
+
+// Middleware para manejar WebSockets
+app.UseWebSockets();
+app.Use(async (HttpContext context, RequestDelegate next) =>
+{
+    // Verificar si la solicitud es un WebSocket
+    if (context.WebSockets.IsWebSocketRequest)
+    {
+        // Aceptar la conexión WebSocket
+        var socket = await context.WebSockets.AcceptWebSocketAsync();
+        // Identificar al cliente
+        var clientId = Guid.NewGuid().ToString(); // o usa IP/context para identificar
+
+        // Añadir al diccionario de clientes
+        sockets[clientId] = socket;
+        Console.WriteLine($"[Conectado] Cliente: {clientId} - {DateTime.Now}");
+
+        // Manejar mensajes del cliente
+        var buffer = new byte[1024 * 4];
+
+        // Mantener la conexión abierta
+        while (socket.State == WebSocketState.Open)
+        {
+            var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                sockets.TryRemove(clientId, out _);
+                await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Cerrando", CancellationToken.None);
+                Console.WriteLine($"[Desconectado] Cliente: {clientId} - {DateTime.Now}");
+            }
+            else
+            {
+                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                Console.WriteLine($"[Recibido] {DateTime.Now} - {clientId}: {message}");
+
+                // Broadcast a todos
+                foreach (var kv in sockets)
+                {
+                    if (kv.Value.State == WebSocketState.Open)
+                    {
+                        var msgBytes = Encoding.UTF8.GetBytes($"{clientId}: {message}");
+                        await kv.Value.SendAsync(new ArraySegment<byte>(msgBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                    }
+                }
+            }
+        }
+    }
+
+    // Si no es WebSocket, continuar con el siguiente middleware
+    else
+    {
+        context.Response.StatusCode = 400;
+    }
+});
+// Iniciar la aplicación web
+app.Run("http://0.0.0.0:5000"); // Importante en Replit
