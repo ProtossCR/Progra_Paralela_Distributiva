@@ -1,0 +1,35 @@
+WebSocket Multicanal en ASP.NET Core
+
+1) Descripción del programa
+
+Este proyecto implementa un servidor WebSocket multicanal en C# utilizando ASP.NET Core y middleware de WebSocket, desplegado en Replit. Su objetivo es permitir la conexión simultánea de múltiples clientes, recibir mensajes de cada uno y reenviarlos (broadcast) a todos los clientes conectados, registrando en consola la actividad de conexión, recepción y retransmisión.
+
+2) Explicación técnica
+
+2.1 Uso de WebSockets
+
+	Se habilitan WebSockets en el pipeline de ASP.NET Core con app.UseWebSockets().
+	Un middleware personalizado acepta solicitudes WebSocket mediante AcceptWebSocketAsync().
+	Cada cliente obtiene un clientId basado en un Guid y se guarda en un diccionario concurrente (ConcurrentDictionary<string, WebSocket>).
+	El servidor entra en un bucle while (socket.State == WebSocketState.Open) para recibir mensajes con ReceiveAsync().
+	Al recibir un texto, se decodifica con Encoding.UTF8.GetString() y se reenvía a todos los sockets abiertos usando SendAsync().
+	Si el cliente envía un cierre (WebSocketMessageType.Close), se elimina del diccionario y se cierra la conexión.
+
+2.2 Configuración en Replit
+
+	Crear un Repl de tipo ASP.NET Core Web App.
+	Reemplazar el contenido de Program.cs con la implementación del servidor.
+	Ejecutar el Repl; Replit expone automáticamente una URL pública.
+	Conectar clientes a través de ws://<tu-proyecto>.repl.co.
+
+2.3 Clases y métodos utilizados
+
+	WebApplication: configura y arranca la app.
+	app.UseWebSockets(): habilita WebSocket support.
+	AcceptWebSocketAsync(): acepta la conexión WebSocket.
+	ConcurrentDictionary<string, WebSocket>: almacena conexiones concurrentemente.
+	ReceiveAsync() / SendAsync(): métodos asíncronos para envío y recepción de datos.
+	WebSocketCloseStatus.NormalClosure: enumera el estatus de cierre de forma ordenada.
+
+3) Evidencia de funcionamiento
+	En el archivo escrito PDF, se incluyen capturas de pantalla y fragmentos de logs que muestran la comunicación entre clientes y servidor.
